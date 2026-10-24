@@ -1,6 +1,7 @@
 #OpenCV development window -> webcam feed w/ the face tracking
 #Keys: l = show/hide the mesh lines
 #      k = show/hide the mask
+#      s = skin filter on/off (compare the mask with and without it)
 #      q = quit
 import time #theme of this hackathon:)
 import cv2
@@ -8,6 +9,7 @@ import cv2
 #from other files
 from face import create_landmarker, detect_face, face_mask, landmarks_to_pixels
 from overlay import draw_face_mesh, draw_mask
+from skin import skin_mask
 
 WINDOW_NAME = "PulseCheck"
 CAMERA_INDEX = 0
@@ -21,6 +23,7 @@ def main() -> None:
 
     show_mesh = True
     show_mask = True
+    use_skin_filter = True
     previous_timestamp_ms = -1
     try:
         with create_landmarker() as landmarker: #with -> javas try (...reader) then closes on exit
@@ -37,6 +40,8 @@ def main() -> None:
                 display = frame  #overlay return copy so frame remains untouched
                 if landmark_points is not None: #face found can dp
                     mask = face_mask(landmark_points, frame.shape)
+                    if use_skin_filter:
+                        mask = skin_mask(frame, mask, landmark_points)  #remove hair, glasses, shadows, really bright ligth
                     if show_mask:
                         display = draw_mask(display, mask) #tint the face skin
                     if show_mesh:
@@ -50,6 +55,8 @@ def main() -> None:
                     show_mesh = not show_mesh  #toggle the mesh lines
                 if key == ord("k"):
                     show_mask = not show_mask  #toggle the mask lines
+                if key == ord("s"):
+                    use_skin_filter = not use_skin_filter  # toggle filtered skin
     finally:
         capture.release() #turns the camera off
         cv2.destroyAllWindows()  #close OpenCV window
