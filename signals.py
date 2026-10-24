@@ -15,6 +15,8 @@ FILTER_ORDER = 3  # called Butterworth steepness: higher = sharper cut-off at th
 FFT_LENGTH = 16384 # zero-padding so peak is found in steps of ab 0.1 BPM in FFT
 #FFT -> Fast Fourier Transform -> finds storngtest wave with multiple waves (in wobbly waves)
 
+POS_WINDOW_SECONDS = 1.6  #POS uses short overlapping windows -> 1.6s
+
 class ColourBuffer:
     #remembers the last BUFFER_SECONDS (10s rn) of (time, mean skin colour) samples.
 
@@ -74,6 +76,31 @@ def green_pulse(buffer: ColourBuffer) -> np.ndarray:
     green = green / green.mean() - 1  #change compared w/ average e.g. 0.002 -> +0.2%
     green = detrend(green) #remove a slow straight-line drift (light slowly changing) -> caused errorsw when wasnt there claude suggested
     return -bandpass(green) #blood absorbs green so needa minus sign so beats point up
+
+
+def pos_pulse(buffer: ColourBuffer) -> np.ndarray:
+    #a light change, shadow or movement makes R, G and B brighter / darker by the same amount
+    #but blood changes them by different amounts (mostly green) POS uses this to detect pulse
+    colours = np.array(buffer.colours)  # one row per sample, columns B, G, R
+    blue = resample(buffer.times, colours[:, 0])
+    green = resample(buffer.times, colours[:, 1])
+    red = resample(buffer.times, colours[:, 2])
+    window = int(POS_WINDOW_SECONDS * RESAMPLE_HZ) #1.6 s -> 48 samples
+    pulse = np.zeros(len(green))  #every window's result is added in here (overlap-add)
+    count = np.zeros(len(green)) #how many windows covered each sample
+    for start in range(len(green) - window + 1): #slide the window along, 1 sample at a time
+        end = start + window
+        red_part = red[start:end] / red[start:end].mean() #1.0 = this window's average
+        green_part = green[start:end] / green[start:end].mean()
+        blue_part = blue[start:end] / blue[start:end].mean()
+        s1 = green_part - blue_part #S1 = G - B -> if same amount change here will give 0
+        s2 = green_part + blue_part - 2 * red_part  # S2 = G + B - 2R -> and here too
+        balance = s1.std() / s2.std() if s2.std() > 0 else 0.0
+        window_pulse = s1 + balance * s2 #h: mixed so leftover shine (glare) cancels
+        pulse[start:end] += window_pulse - window_pulse.mean()  #subtract the mean, add it in
+        count[start:end] += 1
+    pulse = pulse / np.maximum(count, 1)  # average the overlaps (the ends have fewer windows)
+    return -bandpass(pulse)  # minus: blood darkens skin, so flip it so beats point up
 
 
 def estimate_bpm(pulse: np.ndarray) -> float:

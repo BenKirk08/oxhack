@@ -68,3 +68,12 @@ def draw_bpm_panel(frame: np.ndarray, bpm: float | None, pulse: np.ndarray | Non
         points = np.column_stack([xs, ys]).astype(np.int32)  # (x, y) pairs for OpenCV
         cv2.polylines(panel, [points], False, WAVE_COLOUR, 2, cv2.LINE_AA)  # false = open line
     return np.hstack([frame, panel])  # the panel to the right of the frame (a new picture)
+
+
+def draw_method_label(display: np.ndarray, method: str) -> np.ndarray:
+    # write which pulse method is on (POS / Green)
+    x = display.shape[1] - PANEL_WIDTH + 20  # the panel is the right-most PANEL_WIDTH pixels
+    text = f"{method}  (m = switch)" #e.g. "POS  (m = switch)"
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(display, text, (x, 125), font, 0.8, TEXT_COLOUR, 2, cv2.LINE_AA) #under the BPM
+    return display

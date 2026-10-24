@@ -2,10 +2,12 @@
 # Keys: l = show/hide the mesh lines
 #      k = show/hide the mask
 #      s = skin filter on/off (compare the mask with and without it)
+#      m = switch the pulse method: POS (all 3 colours) or green only
 #      q = quit
 import time  # theme of this hackathon:)
 
 import cv2
+import signals
 
 # from other files
 from face import create_landmarker, detect_face, face_mask, landmarks_to_pixels
@@ -13,7 +15,8 @@ from overlay import (
     draw_bpm_panel,
     draw_face_mesh,
     draw_mask,
-    y_scale,  # £ sets the wave's y axis scale once
+    draw_method_label,
+    y_scale,
 )
 from signals import MIN_SECONDS, ColourBuffer, estimate_bpm, green_pulse, mean_colour
 from skin import skin_mask
@@ -32,9 +35,12 @@ def main() -> None:
     show_mesh = True
     show_mask = True
     use_skin_filter = True
+    use_pos = True
     previous_timestamp_ms = -1
-    colour_buffer = ColourBuffer()  # the last 10 s of mean skin colour
-    wave_scale = None  # £ the wave's y axis scale: set once from the first 8 s, then never changed
+
+    colour_buffer = ColourBuffer() #the last 10 s of mean skin colour
+    wave_scale = None  # the wave's y axis scale: set once from the first 8 s, then never changed
+    other_scale = None  # the other method's y scale: each method keeps its own (POS is smaller)
     try:
         with create_landmarker() as landmarker:  # with -> javas try (...reader) then closes on exit
             while True:
@@ -75,12 +81,13 @@ def main() -> None:
                     status = "No face"  # shown instead of a BPM
                 elif collected >= MIN_SECONDS:  # enough samples for a reading
                     pulse = green_pulse(colour_buffer)  # the filtered pulse wave
+                    if use_pos:  #POS is on: use all 3 colours not js green
+                        pulse = signals.pos_pulse(colour_buffer)  # the POS pulse wave
                     bpm = estimate_bpm(pulse)  # strongest pulse frequency x 60
-                    if wave_scale is None:  # £ the first wave (made from the first 8 s)
-                        wave_scale = y_scale(pulse)  # £ set the y axis scale from it, just once
-                display = draw_bpm_panel(
-                    display, bpm, pulse, status, wave_scale
-                )  # panel beside the camera
+                    if wave_scale is None:  # the first wave (made from the first 8 s)
+                        wave_scale = y_scale(pulse)  # set the y axis scale from it, just once
+                display = draw_bpm_panel(display, bpm, pulse, status, wave_scale) # panel beside the camera
+                display = draw_method_label(display, "POS" if use_pos else "Green") #method under bpm
                 cv2.imshow(WINDOW_NAME, display)  # show the overlaid copy on the OpenCV screen
 
                 key = cv2.waitKey(1) & 0xFF  # gets key and keeps just the key (Google says to)
@@ -93,6 +100,9 @@ def main() -> None:
                 if key == ord("s"):
                     use_skin_filter = not use_skin_filter  # toggle filtered skin
                     colour_buffer.clear()  # the mask changed, so start measuring again
+                if key == ord("m"):
+                    use_pos = not use_pos  # toggle the pos and green
+                    wave_scale, other_scale = other_scale, wave_scale  #swap in its own scale
     finally:
         capture.release()  # turns the camera off
         cv2.destroyAllWindows()  # close OpenCV window

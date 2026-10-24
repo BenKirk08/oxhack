@@ -9,7 +9,7 @@ import numpy as np
 # landmark points around the middle of each cheek where almost always skin
 LEFT_CHEEK = [346, 347, 330, 266, 425, 411, 352]  # retireved these values again from claude
 RIGHT_CHEEK = [117, 118, 101, 36, 205, 187, 123]
-NOSE_RIDGE = [197, 3, 51, 5, 281, 248]  # £ bridge of the nose, below where glasses sit
+NOSE_RIDGE = [197, 3, 51, 5, 281, 248]  # brigde of the nose but  below where glasses sit
 
 BRIGHTNESS_TOLERANCE = 0.3  #30% darker / brighter than the cheeks
 COLOUR_TOLERANCE = 0.06  # how far a pixels red/green from cheeks
@@ -20,13 +20,13 @@ MIN_COLOURFULNESS = 0.35  # need 35% of the skin's colourfulness (drops grey/whi
 
 
 def cheek_masks(landmark_points: np.ndarray, face_mask: np.ndarray) -> list[np.ndarray]:
-    # return one mask per cheek (left, right)
+    #return one mask per cheek (left, right)
     masks = []
     for cheek in (LEFT_CHEEK, RIGHT_CHEEK):
         mask = np.zeros_like(face_mask)  # start all 0 (same size as the face mask)
-        cheek_outline = cv2.convexHull(landmark_points[cheek])  # outline around the cheek points
-        cv2.fillConvexPoly(mask, cheek_outline, 255)  # fill the cheek 255
-        mask[face_mask == 0] = 0  # drop any part outside the face mask
+        cheek_outline = cv2.convexHull(landmark_points[cheek]) #outline around the cheek points
+        cv2.fillConvexPoly(mask, cheek_outline, 255) #fill the cheek 255
+        mask[face_mask == 0] = 0# drop any part outside the face mask
         masks.append(mask)
     return masks
 
@@ -34,8 +34,8 @@ def cheek_masks(landmark_points: np.ndarray, face_mask: np.ndarray) -> list[np.n
 def skin_mask(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_points: np.ndarray) -> np.ndarray:
     # return the face mask eith removed parts that arent like cheek
     x, y, width, height = cv2.boundingRect(face_mask)  # smallest box around the face mask -> keep fast
-    skin = np.zeros_like(face_mask)  # all 0 outside the box
-    if width == 0 or height == 0:  # empty face mask -> nothing to filter
+    skin = np.zeros_like(face_mask) # all 0 outside the box
+    if width == 0 or height == 0:  #empty face mask -> nothing to filter
         return skin
     skin[y : y + height, x : x + width] = _filter_face_box(
         frame_bgr[y : y + height, x : x + width],
@@ -53,8 +53,8 @@ def _filter_face_box(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_poin
     red_amount = smooth[:, :, 2] / total_rgb  #BGR so 2 = red (0 index)
     green_amount = smooth[:, :, 1] / total_rgb  #1 = green
 
-    cheeks = []  #true/false masks of cheeks that can be seen
-    cheek_brightnesses = []  #median brightness of eahc  cheeks
+    cheeks = [] #true/false masks of cheeks that can be seen
+    cheek_brightnesses = [] #median brightness of eahc  cheeks
     cheek_reds = []  # median red share of each of those cheeks
     cheek_greens = []  # median green share of each of those cheeks
     for mask in cheek_masks(landmark_points, face_mask):
@@ -82,8 +82,8 @@ def _filter_face_box(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_poin
     typical_red = np.median(patch_reds)  #so one odd patch can't change it
     typical_green = np.median(patch_greens)
 
-    darker_cheek = min(cheek_brightnesses)  # the shaded cheek
-    darkest_skin = max(darker_cheek, COVERED_CHEEK_LIMIT * typical_brightness)  # shade (not cover)
+    darker_cheek = min(cheek_brightnesses) # the shaded cheek
+    darkest_skin = max(darker_cheek, COVERED_CHEEK_LIMIT * typical_brightness) # shade (not cover)
     lowest = (1 - BRIGHTNESS_TOLERANCE) * darkest_skin  #allow shaded cheek
     brightness_close = brightness >= lowest  #in range brightness per pixel
     #numpy actually requires & and ~ not 'and' and 'not'!!!!
@@ -91,7 +91,7 @@ def _filter_face_box(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_poin
     red_difference = red_amount - typical_red  #the truested cheeks red amount
     green_difference = green_amount - typical_green #and for green
     colour_close = np.hypot(red_difference, green_difference) <= COLOUR_TOLERANCE  #use both colours
-    colourfulness = np.hypot(red_amount - 1 / 3, green_amount - 1 / 3)  # £ distance from grey
+    colourfulness = np.hypot(red_amount - 1 / 3, green_amount - 1 / 3) #distance from grey
     skin_colourfulness = np.hypot(typical_red - 1 / 3, typical_green - 1 / 3)  # and for skin
     colour_close &= colourfulness >= MIN_COLOURFULNESS * skin_colourfulness  # also drop greys
 
