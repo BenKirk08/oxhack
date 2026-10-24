@@ -1,0 +1,3 @@
+[tool.ruff]
+line-length = 100  #used google to figure out how to do this
+#makes ruff not throw minor error
