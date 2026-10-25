@@ -96,7 +96,7 @@ def face_mask(landmark_points: np.ndarray, frame_shape: tuple[int, ...]) -> np.n
     cutouts = np.zeros_like(mask)  #same shape and type as mask (SECOND MASK)
     for this_region in CUTOUT_REGIONS:
         region_outline = cv2.convexHull(landmark_points[this_region])  #outline around this region
-        cv2.fillConvexPoly(cutouts, region_outline, 255)  #mark the region for removal (255 as will remove 255 places from actual mask)
+        cv2.fillConvexPoly(cutouts, region_outline, 255) #mark the region for removal (255 as will remove 255 places from actual mask)
 
     face_width = cv2.boundingRect(face_outline)[2]  #boundingRect gives (x, y, width, height) so [2] picks width
     margin = max(1, round(face_width * CUTOUT_MARGIN_FRACTION))  #at least 1 pixel
@@ -105,3 +105,16 @@ def face_mask(landmark_points: np.ndarray, frame_shape: tuple[int, ...]) -> np.n
     cutouts = cv2.dilate(cutouts, brush)  # grow each cut-out by the margin
     mask[cutouts > 0] = 0 #change 255 to 0
     return mask #final combined mask
+
+
+BLINK_LIMIT = 0.5  #eyeBlink score above this = the eyes are closing
+JAW_OPEN_LIMIT = 0.3  #jawOpen score above this = the mouth is open
+
+def blinking_or_talking(result: FaceLandmarkerResult) -> bool:
+    #opening mouth/closing eyes changes skin colour a lot more the pulse -> therefore cut these out
+    if not result.face_blendshapes:  #no face found
+        return False
+    shapes = result.face_blendshapes[0]  # the 1st faces scores
+    scores = {shape.category_name: shape.score for shape in shapes}  # dict: name -> score
+    blink = max(scores["eyeBlinkLeft"], scores["eyeBlinkRight"]) #returns the more closed eye
+    return blink > BLINK_LIMIT or scores["jawOpen"] > JAW_OPEN_LIMIT #either

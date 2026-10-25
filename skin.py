@@ -6,17 +6,40 @@
 import cv2
 import numpy as np
 
-# landmark points around the middle of each cheek where almost always skin
+#landmark points around the middle of each cheek where almost always skin
 LEFT_CHEEK = [346, 347, 330, 266, 425, 411, 352]  # retireved these values again from claude
 RIGHT_CHEEK = [117, 118, 101, 36, 205, 187, 123]
 NOSE_RIDGE = [197, 3, 51, 5, 281, 248]  # brigde of the nose but  below where glasses sit
 
-BRIGHTNESS_TOLERANCE = 0.3  #30% darker / brighter than the cheeks
+BRIGHTNESS_TOLERANCE = 0.3 #30% darker / brighter than the cheeks
 COLOUR_TOLERANCE = 0.06  # how far a pixels red/green from cheeks
 COVERED_CHEEK_LIMIT = 0.5 #  a cheek under half as bright as the other is covered (hair, hand)
 MIN_CHEEK_PIXELS = 50  # fewer than this and cheek not trusted
 BLUR_SIZE = 5 # blur copy first socamera grain dont make pixels flicker in & out
 MIN_COLOURFULNESS = 0.35  # need 35% of the skin's colourfulness (drops grey/white things)
+REFERENCE_SECONDS = 1.0  # how long typical until face lost
+
+
+class SkinReference:
+    #remembers skin filters typical values (eg brightness, red amount, green amount)
+    # averaged over REFERNCE_SECONDS so no flicker -> changes dont happen duratically epsecially on boundary
+
+    def __init__(self) -> None:
+        self.values: np.ndarray | None = None  # the averaged values (None before 1st frame)
+        self.time_s = 0.0 #when they were last updated, in seconds
+
+    def smooth(self, time_s: float, values: np.ndarray) -> np.ndarray:
+        #move averaged values partly towards this frames values and return them
+        #how far depends on real tiem since last frame so any frame rate works
+        gap = time_s - self.time_s #secs since last update
+        if self.values is None or gap > REFERENCE_SECONDS:  #first frame / face lost
+            smoothed = values  #start again from this frames values
+        else:
+            share = 1 - np.exp(-gap / REFERENCE_SECONDS)  # 1/30 s gap -> 3% of the way there
+            smoothed = self.values + share * (values - self.values)
+        self.values = smoothed
+        self.time_s = time_s
+        return smoothed
 
 
 def cheek_masks(landmark_points: np.ndarray, face_mask: np.ndarray) -> list[np.ndarray]:
@@ -31,7 +54,7 @@ def cheek_masks(landmark_points: np.ndarray, face_mask: np.ndarray) -> list[np.n
     return masks
 
 
-def skin_mask(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_points: np.ndarray) -> np.ndarray:
+def skin_mask(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_points: np.ndarray, reference: SkinReference | None = None, time_s: float = 0.0) -> np.ndarray:
     # return the face mask eith removed parts that arent like cheek
     x, y, width, height = cv2.boundingRect(face_mask)  # smallest box around the face mask -> keep fast
     skin = np.zeros_like(face_mask) # all 0 outside the box
@@ -40,12 +63,14 @@ def skin_mask(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_points: np.
     skin[y : y + height, x : x + width] = _filter_face_box(
         frame_bgr[y : y + height, x : x + width],
         face_mask[y : y + height, x : x + width],
-        landmark_points - (x, y)  # move the points so (0, 0) is the box's top-left corner
+        landmark_points - (x, y),  # move the points so (0, 0) is the box's top-left corner
+        reference, #the steady typical skin values (None = measure this frame only)
+        time_s  # this frames time in seconds
     )
     return skin
 
 
-def _filter_face_box(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_points: np.ndarray) -> np.ndarray:
+def _filter_face_box(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_points: np.ndarray, reference: SkinReference | None = None, time_s: float = 0.0) -> np.ndarray:
     #the actuall filter run on the box around the face
     smooth = cv2.GaussianBlur(frame_bgr, (BLUR_SIZE, BLUR_SIZE), 0).astype(np.float32) #decimals -> using guassian distribution
     total_rgb = np.maximum(smooth.sum(axis=2), 1)  #B + G + R per pixel (min 1: no dividing by 0)
@@ -56,7 +81,7 @@ def _filter_face_box(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_poin
     cheeks = [] #true/false masks of cheeks that can be seen
     cheek_brightnesses = [] #median brightness of eahc  cheeks
     cheek_reds = []  # median red share of each of those cheeks
-    cheek_greens = []  # median green share of each of those cheeks
+    cheek_greens = []# median green share of each of those cheeks
     for mask in cheek_masks(landmark_points, face_mask):
         inside = mask > 0 #true for every pixel in this cheek
         if np.count_nonzero(inside) >= MIN_CHEEK_PIXELS:  #skip cheek turned out of view
@@ -82,7 +107,12 @@ def _filter_face_box(frame_bgr: np.ndarray, face_mask: np.ndarray, landmark_poin
     typical_red = np.median(patch_reds)  #so one odd patch can't change it
     typical_green = np.median(patch_greens)
 
-    darker_cheek = min(cheek_brightnesses) # the shaded cheek
+    darker_cheek = min(cheek_brightnesses) #shaded cheek
+    if reference is not None:  # use values averaged over ab 1 s
+        frame_values = np.array([typical_brightness, typical_red, typical_green, darker_cheek])
+        steady = reference.smooth(time_s, frame_values)  #this frame blended into the average
+        typical_brightness, typical_red, typical_green, darker_cheek = steady  #unpack all 4
+
     darkest_skin = max(darker_cheek, COVERED_CHEEK_LIMIT * typical_brightness) # shade (not cover)
     lowest = (1 - BRIGHTNESS_TOLERANCE) * darkest_skin  #allow shaded cheek
     brightness_close = brightness >= lowest  #in range brightness per pixel
