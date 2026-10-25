@@ -157,7 +157,6 @@ class RegionReader:
     #works out each regions pulse wave (POS / green) + own BPM + quality score
     #POS slow so ONE region per frame (instead of all 6 in one)
     #copy all buffers at same time so can combine without any being further along
-
     def __init__(self) -> None:
         self.readings: dict[str, RegionReading] = {} #the last finished round use these
         self.todo: list[tuple[str, ColourBuffer]] = []  # (name, copied buffer) -> a to do list

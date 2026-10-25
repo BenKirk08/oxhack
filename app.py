@@ -1,8 +1,3 @@
-#the Gradio web app. the "Live BPM" tab shows, side by side, the camera with overlays
-#on the left + the BPM, pulse wave and each regions quality on the right
-#"Video Check" tab (step 11) -> checks an uploaded video instead (w/ video.py)
-#app reads the camera itself like live.py so it gets every frame at full speed
-# w/ real times + the page starts by itself (no Record button)
 #run: .venv/bin/python app.py  then open http://127.0.0.1:7860  (Ctrl+C stops it)
 
 import html
@@ -10,6 +5,7 @@ import logging
 import threading
 import time
 from collections import deque
+from concurrent.futures import Future
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -29,10 +25,11 @@ from overlay import (
     draw_face_mesh,
     draw_mask,
     draw_regions,
-    y_scale,
+    y_scale
 )
 from patches import REGIONS
 from pipeline import FrameResult, Pipeline
+from presage_check import PresageReading, presage_bpm, run_presage
 from signals import MIN_SECONDS, MIN_SNR_DB, RESAMPLE_HZ, RegionReading
 from video import VideoResult, analyse_video, pulse_times
 
@@ -62,7 +59,7 @@ WAVE_PERCENTILE = 85  #85% of the waves samples are closer to the middle than th
 WAVE_HEADROOM = 1.3 #graph goes 1.3x past that so only big swings run off
 MIN_PLOT_SECONDS = 5.0  #if cutting calibrating leaves less wave than this keep it all
 VERDICT_ICONS = {"real": "✓", "fake": "✕", "unsure": "?"}  # the round badge by the verdict
-FEATURE_NAMES = {  #step 14: each features row in "How it decided" -> (what it is, format)
+FEATURE_NAMES = { #each features row in "How it decided" -> (what it is, format)
     "windows": ("10 s windows measured", "{:.0f}"),
     "face_seconds": ("Face measured for", "{:.0f} s"),
     "usable_share": ("Frames measured", "{:.0%}"),
@@ -87,6 +84,9 @@ FEATURE_NAMES = {  #step 14: each features row in "How it decided" -> (what it i
     "background_bpm": ("Background's beat rate", "{:.0f} BPM"),
 }
 PROGRESS = gr.Progress()  #gradio swaps in a progres bar here each Analyse click
+PRESAGE_EVERY_SECONDS = 1.0  #how often the presage card checks for presages answer
+PRESAGE_JOBS: dict[str, Future[PresageReading | str]] = {}  # video path -> its presage run
+PRESAGE_LOCK = threading.Lock()  #1 presage at a time (each 1 is a whole node program)
 
 
 @dataclass
@@ -102,9 +102,6 @@ class Snapshot:
 
 
 class LiveCamera:
-    #reads the camera on its own thread (like a java Thread, next to the web server)
-    # and puts every frame through the pipeline
-    #page only reads the newest snapshot so a slow browser cant slow the measuring
 
     def __init__(self, capture: cv2.VideoCapture) -> None:
         self.capture = capture
@@ -377,9 +374,6 @@ def check_list(checks: list[tuple[str, bool | None]]) -> str:
 
 
 def verdict_html(verdict: Verdict | None, features: Features | None = None) -> str:
-    #step 14: verdict box at the top of the video check tab
-    #answer in big letters -> green = real, red = AI-generated, amber = not enough signal
-    # then the score, up to 3 reasons + every feature behind it folded away
     if verdict is None:  # nothing analysed yet
         return (
             "<div class='verdict waiting'><div class='label'><span>Verdict</span></div>"
@@ -465,19 +459,75 @@ def analyse_upload(
     #the Analyse button -> check the uploaded video + fill in the video check tab
     if not path:  #nothing uploaded yet
         raise gr.Error("Upload a video first.") # shows a red msg on the page
+    start_presage(path)  #presage starts now on its own thread, alongside PulseCheck below
     try:
         result = analyse_video(
             Path(path), method == "POS", lambda share: progress(share, desc="Analysing")
         )
     except ValueError as error:  #a file opencv cant read
         raise gr.Error(str(error)) from error
-    verdict = verdict_html(result.verdict, result.features) #step 14 verdict box
+    verdict = verdict_html(result.verdict, result.features) #verdict box
     return verdict, video_summary_html(result), pulse_figure(result), regions_html(result.regions)
 
 
 def clear_results() -> tuple[str, str, None, str]:
     # video check tabs right side like it is b4 anything gets analysed
     return verdict_html(None), video_summary_html(None), None, regions_html({})
+
+
+def presage_html(
+    reading: PresageReading | None = None, problem: str = "", status: str = ""
+) -> str:
+    #card at the bottom of the video check tab -> Presages own BPM for the same video
+    #presage = a company whose API measures pulse from video, a 2nd opinion to compare w/
+    label = "<div class='label'><span>Presage API heart rate</span><span>{}</span></div>"
+    if problem:  #presage couldnt run -> say why (amber)
+        return label.format("") + f"<div class='text'>{html.escape(problem)}</div>"
+    if reading is None:  # not analysed yet or still measuring (grey)
+        text = html.escape(status or "Analyse a video to compare")
+        return label.format("") + f"<div class='text waiting'>{text}</div>"
+    bpm, sure = presage_bpm(reading)
+    if bpm is None:  # ran fine but never got a reading -> show its most common warning
+        hint = max(reading.hints, key=reading.hints.get, default="")  #type: ignore -> most frames
+        text = "No reading. " + (f"Presage says: {hint}" if hint else "It needs about 12 s of a "
+                                 "still, well-lit face with the upper chest in view.")
+        return label.format("") + f"<div class='text'>{html.escape(text)}</div>"
+    note = "" if sure else "low confidence"  #none of its readings were stable
+    return label.format(note) + f"<div class='number'>{bpm:.0f}<small>BPM</small></div>"
+
+
+def presage_job(job: Future[PresageReading | str], path: Path) -> None:
+    #runs on its own thread -> presages reading (or what went wrong) goes into job
+    with PRESAGE_LOCK:  #with -> lock always let go after, like javas synchronized
+        try:
+            job.set_result(run_presage(path))
+        except RuntimeError as error: # no node / no key / slow internet -> said on the card
+            job.set_result(str(error))
+        except Exception:  #anything else -> full error in the terminal + a short note
+            LOGGER.exception("presage failed")
+            job.set_result("Presage failed (the details are in the terminal).")
+
+
+def start_presage(path: str) -> None:
+    #analyse_upload calls this 1st -> presage starts on the video in the background
+    #a video already measured (or still measuring) isnt done again but a failed 1 is retried
+    job = PRESAGE_JOBS.get(path)
+    if job is None or (job.done() and isinstance(job.result(), str)):
+        job = Future()
+        PRESAGE_JOBS[path] = job
+        thread = threading.Thread(target=presage_job, args=(job, Path(path)), daemon=True)
+        thread.start()  #daemon -> Ctrl+C on the app never waits for presage to finish
+
+
+def presage_status(path: str | None) -> str:
+    #timer tick -> the card for the video thats loaded right now (another videos never shows)
+    job = PRESAGE_JOBS.get(path) if path else None
+    if job is None:  #not analysed yet
+        return presage_html()
+    if not job.done():
+        return presage_html(status="Measuring with Presage...")
+    found = job.result()
+    return presage_html(problem=found) if isinstance(found, str) else presage_html(found)
 
 
 def build_page(camera: LiveCamera) -> gr.Blocks:
@@ -502,16 +552,17 @@ def build_page(camera: LiveCamera) -> gr.Blocks:
                     MIN_ZOOM, MAX_ZOOM, value=1.0, step=0.25, label="Wave zoom"
                 )
                 regions = gr.HTML(regions_html({}), elem_id="regions")
-        with gr.Tab("Video Check"), gr.Row(equal_height=False):  #step 11 -> check a video file
+        with gr.Tab("Video Check"), gr.Row(equal_height=False): #check a video file
             with gr.Column(scale=2): #left: the video + Analyse button
                 upload = gr.Video(label="Video to check", sources=["upload"])
                 video_method = gr.Radio(["POS", "Green"], value="POS", label="Pulse method")
-                analyse = gr.Button("Analyse", variant="primary")  #primary = coloured button
+                analyse = gr.Button("Analyse", variant="primary") #primary = coloured button
             with gr.Column(scale=3): # right: what it found
-                video_verdict = gr.HTML(verdict_html(None), elem_id="verdict")  #step 14
+                video_verdict = gr.HTML(verdict_html(None), elem_id="verdict") 
                 video_summary = gr.HTML(video_summary_html(None), elem_id="video-summary")
                 pulse_plot = gr.Plot(label="Pulse and BPM over the video")
                 video_regions = gr.HTML(regions_html({}), elem_id="video-regions")
+                presage_card = gr.HTML(presage_html(), elem_id="presage")  #presages BPM at bottom
         timer = gr.Timer(PAGE_EVERY_SECONDS)  #ticks 10x a second while page is open
         timer.tick(camera.page_update, outputs=[monitor, regions]) # refresh the right side
         method.change(camera.set_method, inputs=method)  #tell the camera ab each change
@@ -529,6 +580,10 @@ def build_page(camera: LiveCamera) -> gr.Blocks:
             inputs=[upload, video_method],
             outputs=[video_verdict, video_summary, pulse_plot, video_regions],
             concurrency_id="video_check",  #shares a queue w/ the clear above (1 at a time)
+        )
+        presage_timer = gr.Timer(PRESAGE_EVERY_SECONDS)  #checks presage once a second
+        presage_timer.tick(  #card follows whichever video is loaded, hidden -> no loading flash
+            presage_status, inputs=upload, outputs=presage_card, show_progress="hidden"
         )
     return page
 

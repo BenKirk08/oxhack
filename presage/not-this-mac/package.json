@@ -1,0 +1,6 @@
+{
+  "name": "not-this-mac",
+  "version": "1.0.0",
+  "private": true,
+  "description": "empty stand-in for SmartSpectra's linux + windows runtimes so npm skips their ~200 MB download (only the mac one is ever loaded)"
+}

@@ -86,9 +86,7 @@ BACKGROUND_CLEARANCE = 0.5  # a box has to stay this many face widths away from 
 BACKGROUND_NAMES = ("background left", "background right") #one track per top corner
 
 
-def background_boxes(  #step 12
-    landmark_points: np.ndarray, frame_shape: tuple[int, ...]  # face points + picture size
-) -> dict[str, tuple[int, int, int, int]]: #name: (x, y, width, height)
+def background_boxes(landmark_points: np.ndarray, frame_shape: tuple[int, ...]) -> dict[str, tuple[int, int, int, int]]: #name: (x, y, width, height)
     #the 2 top corners of the picture, if half a face width clear of the face
     # corners are nearly always wall / ceiling -> lit like the face but no pulse
     #and dont move w/ the head (beside the head would catch the ears which pulse)

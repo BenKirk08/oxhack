@@ -5,5 +5,10 @@
   "description": "runs Presage SmartSpectra on a video file so PulseCheck can compare against it",
   "dependencies": {
     "@smartspectra/node-sdk": "3.4.0"
+  },
+  "overrides": {
+    "@smartspectra/node-sdk-linux-x64": "file:./not-this-mac",
+    "@smartspectra/node-sdk-linux-arm64": "file:./not-this-mac",
+    "@smartspectra/node-sdk-win32-x64": "file:./not-this-mac"
   }
 }

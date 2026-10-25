@@ -93,7 +93,6 @@ class Window:
 
 @dataclass
 class Features:
-    # step 12 -> a whole video summed up. most are the median of its windows
     windows: int #10 s windows that could be measured, 0 = too short / face lost
     face_seconds: float #secs of face meausred, 1st to last sample
     usable_share: float  # share of frames measured (not blinks / talking / no face) 0-1
@@ -120,7 +119,6 @@ class Features:
 
 @dataclass
 class Verdict:
-    #step 13 -> the answer for 1 video for the verdict box
     label: str #"real", "fake" or "unsure"
     headline: str  # the big text
     score: float | None #0-100 how real it looks, None = not scored
@@ -348,7 +346,6 @@ def background_matches(window: Window) -> bool:
 
 
 def video_features(tracks: dict[str, ColourBuffer], usable_share: float) -> Features:
-    #step 12 -> a whole videos colour tracks summed up as features
     # face, regions, neck + bg. usable_share = share of frames measured
     windows = window_readings(tracks)
     face = tracks.get(FACE)
@@ -386,7 +383,7 @@ def video_features(tracks: dict[str, ColourBuffer], usable_share: float) -> Feat
 
 
 def quality_problem(features: Features) -> str | None:
-    #step 13 quality check -> why the video cant be judged, None = it can
+    #why the video cant be judged, None = it can
     if features.face_seconds == 0:
         return "No face could be measured: none was found, or every frame was a blink or talking."
     if features.face_seconds < MIN_SECONDS:
@@ -463,7 +460,7 @@ def neck_disagrees(features: Features) -> bool:
 
 
 def positive_control(features: Features, weak_face_counts: bool) -> tuple[str, float] | None:
-    #the evidence "Likely AI-generated" needs, as (reason, strength in dB) or None
+    #the evidence "Likely AI-generated" needs as (reason, strength in dB) or None
     # neck beating clearly while the face doesnt / beats at another rate,
     # or 2 clear rates in 1 face. hand-set checks need NO face pulse at all,
     # a learned model can use a face thats js weak
@@ -584,10 +581,8 @@ def unsure_reasons(features: Features) -> list[str]:
     return [*reasons, TIPS]  # * = unpack the list into the new one
 
 
-def model_verdict(
-    model: Model, features: Features, checks_answer: tuple[str, float | None, list[str]]
-) -> tuple[str, float | None, list[str]] | None:
-    #the learned models answer kept inside what the checks allow
+def model_verdict(model: Model, features: Features, checks_answer: tuple[str, float | None, list[str]]) -> tuple[str, float | None, list[str]] | None:
+    #the learned models answer kept insdie what the checks allow
     # None = keep the checks answer, also if one of its inputs is missing
     # checks "fake" stands, "real" needs the model to agree (else unsure)
     # otherwise the model can only say "fake" w/ a positive control
@@ -612,12 +607,12 @@ def model_verdict(
 
 
 def judge(features: Features, model: Model | None = None) -> Verdict:
-    #step 13 -> the verdict for 1 video. quality check 1st, then the hand-set
+    #the verdict for 1 video. quality check 1st, then the hand-set
     # checks decide + a saved learned model can refine it (see model_verdict)
     problem = quality_problem(features)
     method = "hand-set checks"
     checks = rule_checks(features)
-    if problem is not None: # cant be judged at all, none of the checks used
+    if problem is not None: # cant be judgde at all, none of the checks used
         label, score, reasons = "unsure", None, [problem, TIPS]
         method = "quality check"
         checks = [(text, None) for text, _ in checks]  #_ = the result, not needed
@@ -686,8 +681,8 @@ def make_model(
 
 
 def fit_model(clips: list[Features], is_real: np.ndarray, groups: list[str]) -> Model:
-    #step 13 -> learn the logistic regression from labelled clips + test it fairly
-    # groups pairs each real clip w/ its face swapped copy, left out together
+    #learn the logistic regression from labelled clips + test it fairly
+    # groups pairs each real clip w/ its faec swapped copy, left out together
     # so it cant "recognise" a fake from its real twin (same person, light, room)
     #hand-set checks get tested on the same clips, both count "not enough signal" as wrong
     rows = [[getattr(clip, name) for name in MODEL_FEATURES] for clip in clips] #1 per clip

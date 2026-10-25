@@ -1,14 +1,3 @@
-#step 10 -> the same pipeline as live.py but on a video file
-#every frame keeps its own time from the file (no assumed fps) so numbers match live
-# + a summary for the whole clip
-#one video:  .venv/bin/python video.py data/real/me.mp4
-#batch:      .venv/bin/python video.py --batch
-#             every clip in data/real/ + data/fake/ -> 1 row each in data/results.csv w/ label
-#learn:      .venv/bin/python video.py --fit
-#             step 13 logistic regression from results.csv (needs 8+ real and 8+ fake clips)
-#             give a clip + its face swapped copy the same file name (any ending) eg
-#             data/real/ben1.mov and data/fake/ben1.mp4 so there tested as a pair
-
 import argparse
 import csv
 from collections.abc import Callable
@@ -63,8 +52,8 @@ class VideoResult:
     pulse_start: float # time of the waves 1st sample (then 1/RESAMPLE_HZ s each)
     calibrated_time: float | None  #when calibrating finished -> 1st time a BPM could show
     regions: dict[str, RegionReading]  #each regions median BPM + median score (SNR dB)
-    features: Features # step 12 real vs fake features
-    verdict: Verdict #step 13 -> real / fake / unsure w/ score + reasons
+    features: Features #real vs fake features
+    verdict: Verdict #real / fake / unsure w/ score + reasons
 
 
 def video_files(folder: Path) -> list[Path]:
@@ -96,7 +85,7 @@ def analyse_video(
     region_bpms: dict[str, list[float]] = {name: [] for name, _, _ in REGIONS}
     last_readings = None  # readings already counted (change once a round)
     calibrated_time: float | None = None  #when calibrating finished (None = not yet)
-    tracks: dict[str, ColourBuffer] = {} #step 12 -> every sample of each patch, whole video
+    tracks: dict[str, ColourBuffer] = {} #every sample of each patch, whole video
     try:  #try/finally -> file + tracker always closed even after an error (like java)
         while True:
             frame_found, frame = capture.read()
@@ -117,7 +106,7 @@ def analyse_video(
                 add_sample(tracks, name, time_s, region_colour)
             for name, background in result.backgrounds.items(): #each corner = own track
                 add_sample(tracks, name, time_s, background)  # (for the flicker check)
-            if result.neck is not None: #neck track (step 13 positive control)
+            if result.neck is not None: #neck track
                 add_sample(tracks, NECK, time_s, result.neck)
             if result.pulse is not None:  #past calibrating, like live.pys scores
                 checked += 1
@@ -145,8 +134,8 @@ def analyse_video(
             middle_bpm = float(np.median(region_bpms[name]))
             regions[name] = RegionReading(np.zeros(0), middle_bpm, float(np.median(scores)))
     usable_share = len(colour_times) / len(times) if times else 0.0  #share of frames measured
-    features = video_features(tracks, usable_share) # step 12 (always POS, see detector.py)
-    verdict = judge(features, load_model()) #step 13 (+ learned model if theres one saved)
+    features = video_features(tracks, usable_share) # (always POS, see detector.py)
+    verdict = judge(features, load_model()) #(+ learned model if theres one saved)
     return VideoResult(
         path=path,
         use_pos=use_pos,
@@ -190,9 +179,9 @@ def result_row(label: str, result: VideoResult) -> dict[str, object]:
         reading = result.regions.get(name)
         column = "snr_" + name.replace(" ", "_") # e.g. "snr_left_cheek"
         row[column] = round(reading.snr_db, 2) if reading is not None else ""
-    for name, value in asdict(result.features).items():  #step 12 -> every feature by name
+    for name, value in asdict(result.features).items(): #every feature by name
         row[name] = round(value, 4) if np.isfinite(value) else "" #"" = couldnt measure it
-    passed = quality_problem(result.features) is None  # step 13: got past the quality check?
+    passed = quality_problem(result.features) is None # got past the quality check?
     row["passed_check"] = "yes" if passed else "no" #--fit only learns from these
     row["features_version"] = FEATURES_VERSION  #--fit refuses rows made w/ older maths
     row["verdict"] = result.verdict.label  # real / fake / unsrue
@@ -218,7 +207,7 @@ def print_summary(result: VideoResult) -> None:
           f"spread ±{result.bpm_spread:.1f}")
     for name, reading in result.regions.items():
         print(f"  {name}: {reading.snr_db:+.1f} dB, {reading.bpm:.0f} BPM")
-    print("  features (step 12):")
+    print("  features:")
     for name, value in asdict(result.features).items():
         print(f"    {name}: {value:.3f}" if isinstance(value, float) else f"    {name}: {value}")
     verdict = result.verdict
@@ -229,7 +218,7 @@ def print_summary(result: VideoResult) -> None:
 
 
 def print_comparison(checked: list[tuple[str, VideoResult]]) -> None:
-    #step 12 check -> each features median for the real clips vs the fake clips
+    #ach features median for the real clips vs the fake clips
     #side by side so the differences are easy to see
     print(f"\n{'feature':24}{'real':>10}{'fake':>10}") #:24 / :>10 = pad to fixed widths
     for field in fields(Features):  # fields() -> every field of the dataclass in order
@@ -252,7 +241,7 @@ def features_from_row(row: dict[str, str]) -> Features:
 
 
 def run_fit() -> None:
-    #step 13 -> learn the logistic regression from data/results.csv (made by --batch)
+    #learn the logistic regression from data/results.csv (made by --batch)
     # only saved if it beats the hand-set checks on the same clips (tested farily)
     if not RESULTS_PATH.exists():
         print(f"No {RESULTS_PATH} yet: run  .venv/bin/python video.py --batch  first.")
@@ -301,7 +290,7 @@ def run_fit() -> None:
 def run_batch(use_pos: bool) -> None:
     #check every clip in data/real/ + data/fake/ and write a row for each
     rows = []
-    checked: list[tuple[str, VideoResult]] = [] #step 12 -> each clips label + result
+    checked: list[tuple[str, VideoResult]] = [] #each clips label + result
     for label in LABELS:
         folder = DATA_PATH / label
         videos = video_files(folder)
@@ -324,7 +313,7 @@ def run_batch(use_pos: bool) -> None:
         writer.writeheader()
         writer.writerows(rows)
     print(f"Wrote {len(rows)} rows to {RESULTS_PATH}")
-    print_comparison(checked)  #step 12 real vs fake side by side
+    print_comparison(checked)#real vs fake side by side
 
 
 def main() -> None:
@@ -334,7 +323,7 @@ def main() -> None:
     parser.add_argument("--green", action="store_true", help="use green only instead of POS")
     parser.add_argument("--fit", action="store_true", help="learn the model from results.csv")
     options = parser.parse_args()
-    if options.fit:  # step 13 logistic regression
+    if options.fit:  #logistic regression
         run_fit()
     elif options.batch:
         run_batch(not options.green)
