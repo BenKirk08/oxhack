@@ -1,0 +1,9 @@
+{
+  "name": "pulsecheck-presage",
+  "private": true,
+  "type": "module",
+  "description": "runs Presage SmartSpectra on a video file so PulseCheck can compare against it",
+  "dependencies": {
+    "@smartspectra/node-sdk": "3.4.0"
+  }
+}

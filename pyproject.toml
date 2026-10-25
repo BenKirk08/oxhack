@@ -1,3 +1,6 @@
 [tool.ruff]
 line-length = 100  #used google to figure out how to do this
 #makes ruff not throw minor error
+
+[tool.pytest.ini_options] #pytest settings -> run tests w/ .venv/bin/pytest
+pythonpath = ["."]  #so tests in tests/ can import the files here (detector.py etc)

@@ -77,3 +77,93 @@ def add_region_colours(buffers: dict[str, ColourBuffer], time_s: float, frame_bg
             if region.name not in buffers: #a new region or one that came back
                 buffers[region.name] = ColourBuffer()
             buffers[region.name].add(time_s, colour)
+
+
+#background patch (step 12) -> a control that has no pulse
+#beating at the faces rate = flicker or camera noise, not a heartbeat
+BACKGROUND_SHARE = 0.2  #each box is 20% of the pictures width and height
+BACKGROUND_CLEARANCE = 0.5  # a box has to stay this many face widths away from the face box
+BACKGROUND_NAMES = ("background left", "background right") #one track per top corner
+
+
+def background_boxes(  #step 12
+    landmark_points: np.ndarray, frame_shape: tuple[int, ...]  # face points + picture size
+) -> dict[str, tuple[int, int, int, int]]: #name: (x, y, width, height)
+    #the 2 top corners of the picture, if half a face width clear of the face
+    # corners are nearly always wall / ceiling -> lit like the face but no pulse
+    #and dont move w/ the head (beside the head would catch the ears which pulse)
+    height, width = frame_shape[:2]  #picture size
+    face_x, face_y, face_width, _ = cv2.boundingRect(landmark_points)  #_ = face height (not needed)
+    clearance = BACKGROUND_CLEARANCE * face_width # gap to keep (room for hair)
+    box_width = round(BACKGROUND_SHARE * width)  #each boxs size
+    box_height = round(BACKGROUND_SHARE * height) #and height
+    boxes = {}  # boxes clear of the face, by name
+    corners = zip(BACKGROUND_NAMES, (0, width - box_width), strict=True)  #(name, x) pairs
+    for name, box_x in corners:  #top left corner then top right
+        left_of_face = box_x + box_width < face_x - clearance  # ends b4 face starts
+        right_of_face = box_x > face_x + face_width + clearance #starts afer face ends
+        above_face = box_height < face_y - clearance  #ends above the face (and hair)
+        if left_of_face or right_of_face or above_face:  # clear of face one way or another
+            boxes[name] = (box_x, 0, box_width, box_height)  #full size from top edge
+    return boxes  #0, 1 or 2  boxes
+
+
+def background_colours(  #step 12
+    frame_bgr: np.ndarray, landmark_points: np.ndarray  #picture + face points
+) -> dict[str, np.ndarray]:  # name: mean BGR
+    #mean BGR of each clear corner by name (empty if the face leaves no room)
+    #each corner its own track -> colours differ so mixng would make the mean jump
+    colours = {} #name: mean BGR
+    boxes = background_boxes(landmark_points, frame_bgr.shape)  #corners clear of the face
+    for name, (x, y, box_width, box_height) in boxes.items():  # .items() -> (name, box) pairs
+        box = frame_bgr[y : y + box_height, x : x + box_width]  #a view of the box (not a copy)
+        colours[name] = np.array(cv2.mean(box)[:3]) #[:3] = B, G, R only
+    return colours  # 0, 1 or 2 corners
+
+
+#neck patch -> step 13s positive control
+#swap tools paste a new face from eyebrows to chin but NEVER the neck
+# so the neck keeps the persons real pulse
+#clear neck pulse + none in the face = "a swap removed the pulse" not "a poor video"
+CHIN = 152  #face mesh point at bottom of the chin
+JAW_CORNERS = [172, 397]  # face mesh points at the 2 jaw corners
+NECK_TOP = 0.05  #neck box starts this share of the face hieght below chin
+NECK_BOTTOM = 0.4 #and ends this far below
+NECK_COLOUR_TOLERANCE = 0.06  # how far a pixels red/green share can be from the face skin
+NECK_BRIGHTNESS = (0.4, 1.6)  #allowed brightness as a share of the faces (necks are shaded)
+MIN_NECK_PIXELS = 1500 #fewer neck pixels than this -> neck not used
+
+
+def neck_colour(  #step 13
+    frame_bgr: np.ndarray,  #the picture
+    landmark_points: np.ndarray,  # face mesh points in pixels
+    skin_values: np.ndarray | None, #skin filters typical values (None = off)
+) -> np.ndarray | None:  #mean BGR (None = no neck reading)
+    #mean B, G, R of the neck skin just under the chin (None if not enough)
+    #only pixels that look like this faces skin count, not hoodie / scarf / beard
+    if skin_values is None:  #no typical skin colour yet (or skin filter off)
+        return None
+    typical_brightness, typical_red, typical_green = skin_values[:3]  #[:3] -> 1st 3
+    height, width = frame_bgr.shape[:2]  # picture size
+    face_height = cv2.boundingRect(landmark_points)[3] #[3] = face box height
+    chin_y = landmark_points[CHIN][1]  #[1] = y of chin point
+    left, right = sorted(landmark_points[JAW_CORNERS][:, 0])  # jaw corners x, left first
+    top = max(round(chin_y + NECK_TOP * face_height), 0)  #kept inside the picture
+    bottom = min(round(chin_y + NECK_BOTTOM * face_height), height) #and the bottom
+    left, right = max(left, 0), min(right, width)  # same sideways
+    if bottom - top < 2 or right - left < 2:  #neck out of pictrue -> give up
+        return None  #no reading
+    box = frame_bgr[top:bottom, left:right]  #view of box under chin (no copy)
+    smooth = cv2.GaussianBlur(box, (5, 5), 0).astype(np.float32) # blur like the skin fliter
+    total = np.maximum(smooth.sum(axis=2), 1)  #B + G + R per pixel (min 1 -> no dividing by 0)
+    red_share = smooth[:, :, 2] / total  #BGR so 2 = red
+    green_share = smooth[:, :, 1] / total  #1 = green
+    colour_gap = np.hypot(red_share - typical_red, green_share - typical_green) #vs the face
+    low, high = NECK_BRIGHTNESS  # unpack both limits
+    brightness = total / 3  #avg of B, G and R
+    bright_enough = brightness >= low * typical_brightness  #not too dark (shaded is ok)
+    not_too_bright = brightness <= high * typical_brightness # and not too bright
+    skin = (colour_gap <= NECK_COLOUR_TOLERANCE) & bright_enough & not_too_bright  #all 3 pass
+    if np.count_nonzero(skin) < MIN_NECK_PIXELS:  #too little neck skin to turst
+        return None
+    return box[skin].mean(axis=0)  # skin pixels mean BGR (from unblurred box)

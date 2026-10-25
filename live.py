@@ -76,7 +76,7 @@ def main() -> None:
                         )  # remove hair, glasses, shadows, really bright ligth
                     regions = region_masks(landmark_points, mask)  #the 6 face regions
                     colour = mean_colour(frame, mask)  # average skin colour (None if no skin)
-                    gated = blinking_or_talking(result)  # eyes closing or mouth open
+                    gated = blinking_or_talking(result)  # type: ignore , eyes closing or mouth open
                     if gated:  #leave this frame out -> blinks & talking change the colour a lot
                         colour = None  #like a frame with no skin
                     if colour is not None:  #only measure when theres skin to average

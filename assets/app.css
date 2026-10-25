@@ -1,0 +1,355 @@
+/* pulsecheck page styles (app.py uses them) -> "#name" = the part w/ elem_id="name" */
+
+/* the title at top */
+#header h1 {
+  margin: 0;
+  font-size: 30px;
+}
+#header p {
+  margin: 2px 0 0;
+  opacity: 0.7;
+}
+
+/* live camera picture */
+#camera canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9; /* keeps its space b4 the 1st frame arrives */
+  object-fit: contain; /* whole picture fits, never cropped or stretched */
+  background: #000;
+  border-radius: 16px;
+}
+
+/* the dark "heart monitor" card */
+:is(#monitor, #video-summary) {
+  background: #0b1016;
+  color: #e5edf5;
+  border: 1px solid #1e293b; /* thin edge so it still stands out on a dark page */
+  border-radius: 16px;
+  padding: 18px 22px 14px;
+}
+:is(#monitor, #video-summary) .label,
+:is(#regions, #video-regions) .label {
+  display: flex;
+  justify-content: space-between; /* "Heart rate" left, method + frame rate right */
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  margin-bottom: 6px;
+}
+:is(#monitor, #video-summary) .label,
+:is(#monitor, #video-summary) .label span {
+  color: #cbd5e1; /* set here or gradios own dark text colour wins on the dark card */
+}
+
+/* hide gradios "0.0s" busy timer -> cards update 10x a second so it js flashes */
+#monitor > .wrap,
+#regions > .wrap {
+  display: none !important;
+}
+:is(#monitor, #video-summary) .bpm {
+  font-size: 96px;
+  font-weight: 700;
+  line-height: 104px;
+  color: #4ade80;
+  font-variant-numeric: tabular-nums; /* all digits same width so it doesnt jiggle */
+}
+:is(#monitor, #video-summary) .bpm small {
+  font-size: 24px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-left: 10px;
+}
+:is(#monitor, #video-summary) .status {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 104px; /* same height as the number so nothing jumps when it appears */
+  color: #cbd5e1;
+}
+:is(#monitor, #video-summary) .status.warn {
+  color: #fbbf24; /* amber for "Hold still" */
+}
+:is(#monitor, #video-summary) .label .error {
+  color: #f87171; /* red error msg (2 classes so it beats the label colour above) */
+  text-transform: none;
+}
+:is(#monitor, #video-summary) .progress {
+  height: 6px;
+  background: #1e293b;
+  border-radius: 3px;
+  overflow: hidden;
+}
+:is(#monitor, #video-summary) .progress div {
+  height: 100%;
+  background: #4ade80;
+}
+:is(#monitor, #video-summary) svg {
+  display: block;
+  width: 100%;
+  height: 150px;
+  margin-top: 10px;
+}
+:is(#monitor, #video-summary) polyline {
+  fill: none;
+  stroke: #4ade80;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke; /* line stays 2.5 px thick when strecthed */
+}
+:is(#monitor, #video-summary) line {
+  stroke: #1e293b;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* face region list */
+:is(#regions, #video-regions) {
+  background: var(--block-background-fill);
+  border: 1px solid var(--border-color-primary);
+  border-radius: 16px;
+  padding: 16px 20px 12px;
+}
+:is(#regions, #video-regions) .region {
+  display: grid;
+  grid-template-columns: 12px 96px 1fr 56px 64px; /* dot, name, bar, score, BPM */
+  align-items: center;
+  gap: 10px;
+  padding: 5px 0;
+  font-size: 15px;
+}
+:is(#regions, #video-regions) i {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+:is(#regions, #video-regions) .bar {
+  height: 8px;
+  background: var(--border-color-primary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+:is(#regions, #video-regions) .bar div {
+  height: 100%;
+}
+:is(#regions, #video-regions) .good .bar div {
+  background: #22c55e; /* green -> counts towards the BPM */
+}
+:is(#regions, #video-regions) .bad .bar div {
+  background: #f59e0b; /* amber -> left out */
+}
+:is(#regions, #video-regions) .region b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+:is(#regions, #video-regions) .region small {
+  text-align: right;
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+}
+:is(#regions, #video-regions) .missing {
+  opacity: 0.4;
+}
+:is(#regions, #video-regions) .legend {
+  margin-top: 10px;
+  font-size: 13px;
+  opacity: 0.7;
+}
+:is(#regions, #video-regions) .legend i {
+  margin: 0 4px 0 10px;
+  vertical-align: -1px;
+}
+:is(#regions, #video-regions) .legend i:first-child {
+  margin-left: 0;
+}
+
+/* video check tabs extra line of facts under the BPM */
+#video-summary .facts {
+  color: #94a3b8;
+  font-size: 14px;
+  margin-top: 6px;
+}
+
+/* step 14: verdict box at top of the video check tab (dark card like the monitor) */
+#verdict .verdict {
+  background: #0b1016;
+  color: #e5edf5;
+  border: 1px solid #1e293b;
+  border-left: 6px solid #475569; /* coloured strip -> grey until theres a verdict */
+  border-radius: 16px;
+  padding: 16px 22px 14px;
+}
+#verdict .real {
+  border-left-color: #22c55e; /* green: likely real */
+}
+#verdict .fake {
+  border-left-color: #ef4444; /* red: likely AI-generated */
+}
+#verdict .unsure {
+  border-left-color: #f59e0b; /* amber: not enough signal */
+}
+#verdict .label {
+  display: flex;
+  justify-content: space-between; /* "Verdict" left, how it decided right */
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+#verdict .label span {
+  color: #94a3b8; /* set here or gradios dark text colour wins */
+}
+#verdict .label span + span {
+  text-transform: none; /* the method in normal letters ("hand-set checks") */
+  letter-spacing: 0;
+  font-weight: 500;
+}
+#verdict .headline {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #e5edf5;
+}
+#verdict .headline i {
+  flex: none; /* round badge keeps its size when text wraps */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  font-size: 26px;
+  font-style: normal;
+}
+#verdict .real .headline,
+#verdict .real .headline i {
+  color: #4ade80; /* badge symbol too or gradio's dark text wins */
+}
+#verdict .real .headline i {
+  background: rgba(34, 197, 94, 0.18);
+}
+#verdict .fake .headline,
+#verdict .fake .headline i {
+  color: #f87171;
+}
+#verdict .fake .headline i {
+  background: rgba(239, 68, 68, 0.18);
+}
+#verdict .unsure .headline,
+#verdict .unsure .headline i {
+  color: #fbbf24;
+}
+#verdict .unsure .headline i {
+  background: rgba(245, 158, 11, 0.18);
+}
+#verdict .waiting .headline {
+  font-size: 22px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+#verdict .score {
+  margin-top: 12px;
+  font-size: 14px;
+}
+#verdict .score span {
+  color: #cbd5e1; /* set on the text itself (gradio again!) */
+}
+#verdict .score .bar {
+  height: 8px;
+  margin-top: 5px;
+  background: #1e293b;
+  border-radius: 4px;
+  overflow: hidden;
+}
+#verdict .score .bar div {
+  height: 100%;
+  background: #94a3b8;
+}
+#verdict .real .score .bar div {
+  background: #22c55e;
+}
+#verdict .fake .score .bar div {
+  background: #ef4444;
+}
+#verdict .unsure .score .bar div {
+  background: #f59e0b;
+}
+#verdict ul.reasons {
+  margin: 12px 0 0;
+  padding-left: 20px;
+}
+#verdict ul.reasons li {
+  margin: 4px 0;
+  font-size: 15px;
+  color: #e5edf5;
+}
+#verdict ul.checks {
+  list-style: none; /* the ✓ / ✗ / – marks replace the bullets */
+  margin: 8px 0 10px;
+  padding: 0;
+}
+#verdict ul.checks li {
+  margin: 3px 0;
+  font-size: 13px;
+  color: #cbd5e1;
+}
+#verdict ul.checks b {
+  display: inline-block;
+  width: 20px; /* marks line up in a colum */
+}
+#verdict ul.checks .pass b {
+  color: #4ade80;
+}
+#verdict ul.checks .fail b {
+  color: #f87171;
+}
+#verdict ul.checks .skip,
+#verdict ul.checks .skip b {
+  color: #64748b; /* couldnt be checked (eg no neck in view) -> greyed out */
+}
+#verdict details {
+  margin-top: 12px;
+  font-size: 13px;
+  color: #94a3b8;
+}
+#verdict summary {
+  cursor: pointer; /* click to open "How it decided" */
+  color: #94a3b8;
+}
+#verdict table,
+#verdict tr {
+  width: 100%;
+  margin-top: 6px;
+  border: none; /* no box round the table, js thin lines between rows */
+  border-collapse: collapse;
+}
+#verdict tr:last-child td {
+  border-bottom: none;
+}
+#verdict td {
+  padding: 4px 6px 4px 0;
+  border: none;
+  border-bottom: 1px solid #1e293b;
+  background: transparent;
+  color: #cbd5e1;
+}
+#verdict td + td {
+  text-align: right; /* the value column */
+  font-variant-numeric: tabular-nums;
+  color: #e5edf5;
+}
+#verdict details p {
+  margin: 8px 0 0;
+  color: #64748b;
+}
+#verdict .note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}

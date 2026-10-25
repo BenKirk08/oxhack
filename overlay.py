@@ -101,7 +101,7 @@ def draw_regions(frame: np.ndarray, regions: list[Region]) -> np.ndarray:
         #this is mostly same as the face mask
         x, y, width, height = cv2.boundingRect(region.mask)#smallest box around the region
         area = canvas[y : y + height, x : x + width]
-        inside = region.mask[y + height, x + width] > 0  #True for the region's pixels
+        inside = region.mask[y : y + height, x : x + width] > 0  #True for the region's pixels
         colour = INNER_COLOUR if region.inner else OUTER_COLOUR
         tint = np.full_like(area, colour) # a box-sized picture of that one colour
         blended = cv2.addWeighted(area, 1 - REGION_OPACITY, tint, REGION_OPACITY, 0) #fast mix
